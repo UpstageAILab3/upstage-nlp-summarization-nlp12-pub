@@ -74,7 +74,7 @@ class Preprocess:
     def make_input(self, dataset: pd.DataFrame, is_test: bool = False):
         if is_test:
             # BART 모델은 prefix가 필요하지 않음
-            encoder_input = dataset['dialogue'].apply(lambda x: str(x))  # 요약할 대상을 그대로 입력
+            encoder_input = dataset['dialogue'].apply(lambda x: str(x))  
             decoder_input = [self.bos_token] * len(dataset['dialogue'])
             return encoder_input.tolist(), list(decoder_input)
         else:
@@ -131,12 +131,9 @@ def load_tokenizer_and_model(config, device, is_train=True):
     # PreTrainedTokenizerFast로 일관성 맞춤
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name, clean_up_tokenization_spaces=True)
     
-    # 특수 토큰을 추가 (코드2에서 가져옴)
+    # 특수 토큰을 추가
     special_tokens_dict = {'additional_special_tokens': config['tokenizer']['special_tokens']}
     tokenizer.add_special_tokens(special_tokens_dict)
-
-    # 레이블 수를 설정 
-    # config['model']['num_labels'] = 2  # 데이터에 맞는 레이블 수로 조정
 
     # BART 기반의 모델 로드
     if is_train:
@@ -151,7 +148,7 @@ def load_tokenizer_and_model(config, device, is_train=True):
     # generation_config.json을 사용하지 않고 직접 설정
     generation_config = GenerationConfig(
         forced_eos_token_id=tokenizer.eos_token_id,
-        max_length=config['inference']['generate_max_length'],  # 이 부분을 적절히 조정하여 주어 생략을 방지
+        max_length=config['inference']['generate_max_length'],  
         num_beams=config['inference']['num_beams'],
         no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
         early_stopping=config['inference']['early_stopping']
@@ -377,15 +374,14 @@ def load_tokenizer_and_model(config, device, is_train=True):
     # 특수 토큰에 맞게 모델의 임베딩 크기를 조정
     model.resize_token_embeddings(len(tokenizer))
 
-    # generation_config.json을 사용하지 않고 직접 설정
     generation_config = GenerationConfig(
         forced_eos_token_id=tokenizer.eos_token_id,
         max_length=config['inference']['generate_max_length'],
         num_beams=config['inference']['num_beams'],
         no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
         early_stopping=config['inference']['early_stopping'],
-        decoder_start_token_id=tokenizer.bos_token_id,  # 여기에 추가
-        bos_token_id=tokenizer.bos_token_id  # 여기에 추가
+        decoder_start_token_id=tokenizer.bos_token_id,  
+        bos_token_id=tokenizer.bos_token_id 
     )
     
     # 모델의 GenerationConfig 적용
@@ -479,9 +475,6 @@ if __name__ == "__main__":
             "special_tokens": ['#Person1#', '#Person#', '#Person4#', '#CarNumber#', '#Person2#', '#SSN#', '#Person6#',
                                '#DateOfBirth#', '#Email#', '#PhoneNumber#', '#Address#', '#Person3#', '#CardNumber#',
                                '#PassportNumber#', '#Person5#', '#Person7#']
-        },
-        "model": {  # 모델 설정 추가
-            "num_labels": 2  # 레이블 수를 2로 맞추기
         },
         "training": {
             "overwrite_output_dir": True,
