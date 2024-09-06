@@ -1,7 +1,7 @@
 ## paanmego@gmail.com Maded by 2024.09
 import os
 import torch
-
+import re
 import logging
 import warnings
 
@@ -151,14 +151,14 @@ def load_tokenizer_and_model(config, device, is_train=True):
     # generation_config.json을 사용하지 않고 직접 설정
     generation_config = GenerationConfig(
         forced_eos_token_id=tokenizer.eos_token_id,
-        max_length=config['inference']['generate_max_length'],
+        max_length=config['inference']['generate_max_length'],  # 이 부분을 적절히 조정하여 주어 생략을 방지
         num_beams=config['inference']['num_beams'],
         no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
-        early_stopping=config['inference']['early_stopping'],
-        decoder_start_token_id=tokenizer.bos_token_id,  
-        bos_token_id=tokenizer.bos_token_id 
+        early_stopping=config['inference']['early_stopping']
+        # decoder_start_token_id=tokenizer.bos_token_id,  
+        # bos_token_id=tokenizer.bos_token_id 
     )
-    
+     
     # 모델의 GenerationConfig 적용
     model.generation_config = generation_config
 
@@ -214,22 +214,23 @@ def compute_metrics(config, tokenizer, pred):
     decoded_preds = tokenizer.batch_decode(predictions, clean_up_tokenization_spaces=True)
     labels = tokenizer.batch_decode(labels, clean_up_tokenization_spaces=True)
 
+    # 정확한 평가를 위해 미리 정의된 불필요한 생성토큰들을 제거합니다.
     replaced_predictions = decoded_preds.copy()
     replaced_labels = labels.copy()
     remove_tokens = config['inference']['remove_tokens']
     for token in remove_tokens:
-        replaced_predictions = [sentence.replace(token, " ") for sentence in replaced_predictions]
-        replaced_labels = [sentence.replace(token, " ") for sentence in replaced_labels]
+        replaced_predictions = [sentence.replace(token," ") for sentence in replaced_predictions]
+        replaced_labels = [sentence.replace(token," ") for sentence in replaced_labels]
 
-    print('-'*150)
-    for i in range(3):
-        print(f"PRED: {replaced_predictions[i]}")
-        print(f"GOLD: {replaced_labels[i]}")
-        print('-'*150)
-
+    # 최종적인 ROUGE 점수를 계산합니다.
     results = rouge.get_scores(replaced_predictions, replaced_labels, avg=True)
 
-    result = {key: value["f"] for key, value in results.items()}
+    # ROUGE 점수 중 F-1 score를 통해 평가합니다.
+    result = {
+        "rouge-1": results["rouge-1"]["f"],
+        "rouge-2": results["rouge-2"]["f"],
+        "rouge-l": results["rouge-l"]["f"]
+    }
     return result
 
 def load_trainer_for_train(config, generate_model, tokenizer, train_inputs_dataset, val_inputs_dataset):
@@ -252,8 +253,8 @@ def load_trainer_for_train(config, generate_model, tokenizer, train_inputs_datas
         save_total_limit=config['training']['save_total_limit'],
         fp16=config['training']['fp16'],
         load_best_model_at_end=True,
-        metric_for_best_model="eval_rouge-l",
-        greater_is_better=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         seed=config['training']['seed'],
         logging_dir=config['training']['logging_dir'],
         logging_strategy=config['training']['logging_strategy'],
@@ -268,18 +269,18 @@ def load_trainer_for_train(config, generate_model, tokenizer, train_inputs_datas
         entity=config['wandb']['entity'],
         project=config['wandb']['project'],
         name=config['wandb']['name'],
-        config=config,  # 전체 config를 wandb에 로깅
+        config=config,  
     )
 
     os.environ["WANDB_LOG_MODEL"] = "end"
+
+    print('-'*10, 'Make training arguments complete', '-'*10,)
+    print('-'*10, 'Make trainer', '-'*10,)
 
     early_stopping_callback = EarlyStoppingCallback(
         early_stopping_patience=config['training']['early_stopping_patience'],
         early_stopping_threshold=config['training']['early_stopping_threshold']
     )
-
-    print('-'*10, 'Make training arguments complete', '-'*10,)
-    print('-'*10, 'Make trainer', '-'*10,)
 
     trainer = Seq2SeqTrainer(
         model=generate_model,
@@ -355,51 +356,113 @@ def prepare_test_dataset(config, preprocessor, tokenizer):
 
     return test_data, test_encoder_inputs_dataset
 
-def inference(config):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model, tokenizer = load_tokenizer_and_model(config, device, is_train=False)
-    
-    preprocessor = Preprocess(tokenizer)
-    test_data, test_encoder_inputs_dataset = prepare_test_dataset(config, preprocessor, tokenizer)
-    dataloader = DataLoader(test_encoder_inputs_dataset, batch_size=config['inference']['batch_size'])
+def load_tokenizer_and_model(config, device, is_train=True):
+    print('Load tokenizer & model')
+    model_name = config['general']['model_name']
 
+    # PreTrainedTokenizerFast로 일관성 맞춤
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name, clean_up_tokenization_spaces=True)
+
+    # 특수 토큰을 추가 (코드2에서 가져옴)
+    special_tokens_dict = {'additional_special_tokens': config['tokenizer']['special_tokens']}
+    tokenizer.add_special_tokens(special_tokens_dict)
+
+    # BART 기반의 모델 로드
+    if is_train:
+        model = BartForConditionalGeneration.from_pretrained(config['general']['model_name'], ignore_mismatched_sizes=True)
+    else:
+        ckt_path = config['inference']['ckt_path']
+        model = BartForConditionalGeneration.from_pretrained(ckt_path)
+
+    # 특수 토큰에 맞게 모델의 임베딩 크기를 조정
+    model.resize_token_embeddings(len(tokenizer))
+
+    # generation_config.json을 사용하지 않고 직접 설정
     generation_config = GenerationConfig(
-        forced_eos_token_id=2,
+        forced_eos_token_id=tokenizer.eos_token_id,
         max_length=config['inference']['generate_max_length'],
         num_beams=config['inference']['num_beams'],
         no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
         early_stopping=config['inference']['early_stopping'],
+        decoder_start_token_id=tokenizer.bos_token_id,  # 여기에 추가
+        bos_token_id=tokenizer.bos_token_id  # 여기에 추가
     )
+    
+    # 모델의 GenerationConfig 적용
+    model.generation_config = generation_config
 
-    model.eval()
+    model.to(device)
+    print('Load tokenizer & model complete')
+    return model, tokenizer
+
+def extract_first_sentence(summary):
+    # 특수 토큰을 유지하면서 첫 번째 문장을 추출
+    sentences = re.split(r'(?<=[.!?])\s+', summary)
+    if sentences:
+        return sentences[0].strip()
+    return summary.strip()
+
+def clean_summary(summary):
+    # 중복되는 #Person 태그 제거
+    summary = re.sub(r'(#Person\d*#)\s*\1+', r'\1', summary)
+    
+    # #Person 태그와 조사 사이의 불필요한 공백 제거
+    summary = re.sub(r'(#Person\d*#)\s+([은는이가을를에의])', r'\1\2', summary)
+    
+    # 문장 시작 부분의 공백 제거
+    summary = summary.strip()
+    
+    # 여러 개의 연속된 공백을 하나의 공백으로 변경
+    summary = re.sub(r'\s+', ' ', summary)
+    
+    return summary
+
+def inference(config):
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print('-'*10, f'device : {device}', '-'*10,)
+    print(torch.__version__)
+
+    generate_model, tokenizer = load_tokenizer_and_model(config, device, False)
+
+    data_path = config['general']['data_path']
+    preprocessor = Preprocess(tokenizer)
+
+    test_data, test_encoder_inputs_dataset = prepare_test_dataset(config, preprocessor, tokenizer)
+    dataloader = DataLoader(test_encoder_inputs_dataset, batch_size=config['inference']['batch_size'])
+
     summary = []
     text_ids = []
-
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Inference", dynamic_ncols=True, ascii=True):
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            text_ids.extend(batch['ID'])
-
-            generated_ids = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                generation_config=generation_config
+        for item in tqdm(dataloader):
+            text_ids.extend(item['ID'])
+            generated_ids = generate_model.generate(
+                input_ids=item['input_ids'].to(device),
+                attention_mask=item['attention_mask'].to(device),
+                no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
+                early_stopping=config['inference']['early_stopping'],
+                max_length=config['inference']['generate_max_length'],
+                num_beams=config['inference']['num_beams'],
             )
             
-            decoded_summaries = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            summary.extend(decoded_summaries)
+            for ids in generated_ids:
+                result = tokenizer.decode(ids, skip_special_tokens=False)
+                summary.append(extract_first_sentence(result))
 
-    remove_tokens = config['inference']['remove_tokens']
-    preprocessed_summary = [' '.join([token for token in sentence.split() if token not in remove_tokens]) for sentence in summary]
+    # 특수 토큰 목록
+    special_tokens = ['<s>', '</s>', '<pad>']
 
+    # 불필요한 특수 토큰 제거 및 요약문 정리
+    cleaned_summary = [clean_summary(re.sub(f"({'|'.join(re.escape(token) for token in special_tokens)})", "", sent)) for sent in summary]
+    
     output = pd.DataFrame({
-        "fname": text_ids,
-        "summary": preprocessed_summary,
+        "fname": test_data['fname'],
+        "summary": cleaned_summary,
     })
+
     result_path = config['inference']['result_path']
-    os.makedirs(result_path, exist_ok=True)
-    output.to_csv(os.path.join(result_path, "output.csv"), index=False)
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
+    output.to_csv(os.path.join(result_path, "output.csv"), index=False, sep=',')
 
     return output
 
@@ -444,7 +507,7 @@ if __name__ == "__main__":
             "do_train": True,
             "do_eval": True,
             "early_stopping_patience": 3,
-            "early_stopping_threshold": 0.0001,
+            "early_stopping_threshold": 0.001,
             "report_to": "wandb"
         },
         "wandb": {
