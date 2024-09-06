@@ -44,6 +44,21 @@ wandb.init(
 torch.backends.cudnn.benchmark = True
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+# 오래된 로그 파일 삭제
+def clear_logs():
+    log_file = 'training.log'
+    if os.path.exists(log_file):
+        os.remove(log_file)
+    logger.info("Training log cleared.")
+
+# 오래된 체크포인트 자동 삭제(n개만 유지)
+def cleanup_old_checkpoints(config: Dict[str, Any], keep_last_n: int = 3):
+    checkpoint_dir = os.path.join(config['general']['output_dir'], "checkpoints")
+    checkpoint_files = sorted([f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_") and f.endswith(".pt")], reverse=True)
+    for checkpoint in checkpoint_files[keep_last_n:]:
+        os.remove(os.path.join(checkpoint_dir, checkpoint))
+        logger.info(f"Removed old checkpoint: {checkpoint}")
+
 # 시퀀스를 작은 청크로 나누는 함수
 def chunk_sequence(sequence, chunk_size):
     return [sequence[i:i + chunk_size] for i in range(0, len(sequence), chunk_size)]
@@ -197,20 +212,20 @@ def save_checkpoint(model, optimizer, epoch, step, loss, config, is_best=False):
     }, checkpoint_path)
     
     if is_best:
-        best_model_path = os.path.join(config['general']['output_dir'], "best_model.pt")
+        best_model_path = os.path.join(config['general']['output_dir'], "best_t5_model.pt")
         shutil.copyfile(checkpoint_path, best_model_path)
     
     logger.info(f"Checkpoint saved at {checkpoint_path}")
     return checkpoint_path
 
 def load_tokenizer(config):
-    tokenizer_path = os.path.join(config['general']['output_dir'], "final_tokenizer")
+    tokenizer_path = os.path.join(config['general']['output_dir'], "final_t5_tokenizer")
     tokenizer = T5TokenizerFast.from_pretrained(tokenizer_path)
     logger.info(f"Tokenizer loaded from {tokenizer_path}")
     return tokenizer
 
 def save_tokenizer(tokenizer, output_dir):
-    tokenizer_save_path = os.path.join(output_dir, "final_tokenizer")
+    tokenizer_save_path = os.path.join(output_dir, "final_t5_tokenizer")
     tokenizer.save_pretrained(tokenizer_save_path)
     logger.info(f"Final tokenizer saved at {tokenizer_save_path}")
 
@@ -221,7 +236,7 @@ def load_tokenizer_and_model(config, device, for_inference=False):
     if for_inference:
         tokenizer = load_tokenizer(config)
         model = LongformerEncoderDecoderForConditionalGeneration.from_pretrained(
-            os.path.join(config['general']['output_dir'], "final_model")
+            os.path.join(config['general']['output_dir'], "final_t5_model")
         )
     else:
         tokenizer = T5TokenizerFast.from_pretrained(model_name)
@@ -241,14 +256,6 @@ def load_tokenizer_and_model(config, device, for_inference=False):
     
     model.to(device)
     return model, tokenizer
-
-# 저장공간을 위해 오래된 체크포인트 자동 삭제(n개만 유지)
-def cleanup_old_checkpoints(config: Dict[str, Any], keep_last_n: int = 5):
-    checkpoint_dir = os.path.join(config['general']['output_dir'], "checkpoints")
-    checkpoint_files = sorted([f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_") and f.endswith(".pt")], reverse=True)
-    for checkpoint in checkpoint_files[keep_last_n:]:
-        os.remove(os.path.join(checkpoint_dir, checkpoint))
-        logger.info(f"Removed old checkpoint: {checkpoint}")
 
 class EarlyStoppingCallback:
     def __init__(self, patience: int, threshold: float):
@@ -321,7 +328,7 @@ def train_and_save(config):
 
             if (not dist.is_initialized() or dist.get_rank() == 0) and step % config['training']['save_steps'] == 0:
                 save_checkpoint(model, optimizer, epoch, step, loss.item(), config)
-                cleanup_old_checkpoints(config)
+                cleanup_old_checkpoints(config, keep_last_n=2)
 
         avg_train_loss = total_loss / len(train_dataloader)
         if not dist.is_initialized() or dist.get_rank() == 0:
@@ -362,7 +369,7 @@ def train_and_save(config):
             break
     
     # 최종 모델 저장 (항상 best model 저장)
-    final_model_path = os.path.join(config['general']['output_dir'], "final_model")
+    final_model_path = os.path.join(config['general']['output_dir'], "final_t5_model")
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
         model.module.save_pretrained(final_model_path)
     else:
@@ -371,6 +378,9 @@ def train_and_save(config):
     
     # 학습이 끝난 후 토크나이저 저장
     save_tokenizer(tokenizer, config['general']['output_dir'])
+
+    # 로그 파일 지우기
+    clear_logs()
 
 # 성능 평가 함수
 def evaluate(model: torch.nn.Module, dataloader: DataLoader, tokenizer: T5TokenizerFast, device: torch.device, config: Dict[str, Any]):
@@ -603,7 +613,7 @@ def main():
             'preserve_special_tokens': True,
         },
         "training": {
-            "num_train_epochs": 7,
+            "num_train_epochs": 6,
             "learning_rate": 1e-5,
             "per_device_train_batch_size": 1,
             "per_device_eval_batch_size": 1,
@@ -611,12 +621,12 @@ def main():
             "weight_decay": 0.01,
             "logging_steps": 1000,
             "eval_steps": 1000,
-            "save_steps": 1000,
-            "save_total_limit": 6,
+            "save_steps": 3000,
+            "save_total_limit": 3,
             "fp16": True,
             "gradient_accumulation_steps": 6,
             "generation_max_length": 256,
-            "early_stopping_patience": 5,
+            "early_stopping_patience": 3,
             "early_stopping_threshold": 0.001,
             "max_grad_norm": 1.0,
         },
