@@ -58,8 +58,28 @@ class Preprocess:
     @staticmethod
     def make_set_as_df(file_path: str, is_train: bool = True) -> pd.DataFrame:
         df = pd.read_csv(file_path)
-        replacements = {'ㅋㅋ': '웃기다', 'ㅇ로': '으로', '제ㅏ': '제가', 'ㅍ알': ' 알', 'ㄷ거': '거'}
+        
+        replacements = {
+            'ㅋㅋ': '웃기다', 'ㅇ로': '으로', '제ㅏ': '제가', 'ㅍ알': ' 알', 'ㄷ거': '거',
+            '##': '#', '회사 #에서': '회사에서',
+            '#작은': '#Person2#: 작은', '#여기서': '#Person1#: 여기서', '#나': '#Person2#: 나',
+            '#페리에와': '#Person1#: 페리에와', '#샐러드용': '#Person1#: 샐러드용',
+            '#어디': '#Person1#: 어디', '#잠깐만요': '#Person1#: 잠깐만요',
+            '#하지만': '#Person1#: 하지만', '#사람1만기': '#Person1#: 만기',
+            '#PhoneNumber이고': '#PhoneNumber#이고', '#Person1:': '#Person1#:',
+            '#Person2:': '#Person2#:', '#Person#': '#Person2#:', '사람1#:': '#Person1#:',
+            '#고객님:': '#Person2#: 고객님', '선생님: ': '', '로저스 씨: ': '',
+            '남자: 아악.': '', '남자: 고마워.': ''
+        }
+        
         df['dialogue'] = df['dialogue'].replace(replacements, regex=True)
+
+        if 'summary' in df.columns:
+            summary_replacements = {
+                '사람1#': '#Person1#', '사람2#': '#Person2#', '#사람1#': '#Person1#'
+            }
+            df['summary'] = df['summary'].replace(summary_replacements, regex=True)
+
         if is_train:
             return df[['fname', 'dialogue', 'summary', 'topic']]
         else:
@@ -272,6 +292,8 @@ def train_and_save(config):
     early_stopping_callback = EarlyStoppingCallback(patience=config['training']['early_stopping_patience'], threshold=config['training']['early_stopping_threshold'])
 
     best_eval_loss = float('inf')
+    best_model_path = None
+
     for epoch in range(config['training']['num_train_epochs']):
         model.train()
         total_loss = 0
@@ -307,7 +329,6 @@ def train_and_save(config):
             wandb.log({"avg_train_loss": avg_train_loss, "epoch": epoch + 1})
         
         eval_loss, rouge_scores = evaluate(model, eval_dataloader, tokenizer, device, config)
-        
         if not dist.is_initialized() or dist.get_rank() == 0:
             logger.info(f"Epoch {epoch+1} - Eval Loss: {eval_loss:.4f}")
             logger.info(f"Epoch {epoch+1} - Rouge Scores:")
@@ -322,29 +343,31 @@ def train_and_save(config):
                 "epoch": epoch + 1
             })
 
-        if early_stopping_callback(eval_loss, epoch):
-            logger.info(f"Early stopping triggered at epoch {epoch + 1}")
-            break
-
-        # 모델 저장 로직
         if eval_loss < best_eval_loss:
             best_eval_loss = eval_loss
-            save_checkpoint(model, optimizer, epoch, -1, eval_loss, config, is_best=True)
-            logger.info("최고 성능 : 모델을 저장했습니다.")
+            best_model_path = save_checkpoint(model, optimizer, epoch, -1, eval_loss, config, is_best=True)
+            logger.info(f"New best model saved with eval loss: {eval_loss:.4f}")
         else:
-            logger.info("모델 성능이 개선되지 않았습니다. 모델을 저장하지 않습니다.")
+            logger.info(f"No improvement in eval loss. Current best: {best_eval_loss:.4f}")
 
         if early_stopping_callback(eval_loss, epoch):
-            logger.info(f"Early stopping이 에폭 {epoch + 1}에서 트리거되었습니다.")
+            logger.info(f"Early stopping triggered at epoch {epoch + 1}")
+            if best_model_path:
+                logger.info(f"Loading best model from {best_model_path}")
+                checkpoint = torch.load(best_model_path)
+                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                    model.module.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    model.load_state_dict(checkpoint['model_state_dict'])
             break
     
-    # 최종 모델 저장
+    # 최종 모델 저장 (항상 best model 저장)
     final_model_path = os.path.join(config['general']['output_dir'], "final_model")
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
         model.module.save_pretrained(final_model_path)
     else:
         model.save_pretrained(final_model_path)
-    logger.info(f"Final model saved at {final_model_path}")
+    logger.info(f"Final model (best performing) saved at {final_model_path}")
     
     # 학습이 끝난 후 토크나이저 저장
     save_tokenizer(tokenizer, config['general']['output_dir'])
@@ -427,6 +450,7 @@ def evaluate(model: torch.nn.Module, dataloader: DataLoader, tokenizer: T5Tokeni
     
 #     # 가장 빈번한 단어 n개 추출
 #     return [word for word, _ in Counter(words).most_common(n)]
+
 # 대화에서 주요 키워드 추출(향후 업데이트 할 부분 : 리더보드 점수 향상?)
 def extract_keywords(text, n=5):
     # 특수 문자 제거 및 단어 분리
@@ -471,7 +495,7 @@ def post_process_summary(summary):
     
     special_tokens = ['#Person1#', '#Person#', '#Person4#', '#Person2#', '#Person3#', '#Person5#', '#Person6#', '#Person7#']
     for token in special_tokens:
-        summary = summary.replace(token, f' {token} ')
+        summary = summary.replace(token, f'{token}')
     
     summary = summary.strip()
     summary = re.sub(r'</s>$', '', summary)
@@ -495,7 +519,6 @@ def create_prompt(dialogue, is_test=False, topic=None, max_topic_length=50):
 
     # Basic
     prompt = f"summarize: {dialogue}"
-
     # 각 화자가 대화에서 한 역할을 설명하는 프롬프트 생성
     #prompt = f"대화 내용 요약:\n- 대화자들: {subject_list}\n- 주제: {topic}\n- 주요 키워드: {', '.join(keywords)}\n\n다음 대화에서 각 화자가 한 역할을 반영하여 요약문을 생성하세요:\n{dialogue}"
     
@@ -539,8 +562,14 @@ def inference(config, model, tokenizer, preprocessor):
                 no_repeat_ngram_size=config['inference']['no_repeat_ngram_size'],
                 early_stopping=config['inference']['early_stopping'],
                 max_length=config['inference']['generate_max_length'],
+                #min_length=config['inference']['min_length'],
                 num_beams=config['inference']['num_beams'],
+                # length_penalty=1.0,
+                # repetition_penalty=1.1,
                 do_sample=False,
+                #temperature=0.3,
+                #top_k=50,
+                #top_p=0.9,
                 output_scores=True,
                 return_dict_in_generate=True,
             )
@@ -574,8 +603,8 @@ def main():
             'preserve_special_tokens': True,
         },
         "training": {
-            "num_train_epochs": 30,
-            "learning_rate": 5e-6,
+            "num_train_epochs": 7,
+            "learning_rate": 1e-5,
             "per_device_train_batch_size": 1,
             "per_device_eval_batch_size": 1,
             "warmup_steps": 500,
@@ -595,8 +624,9 @@ def main():
             "result_path": "./prediction/",
             "no_repeat_ngram_size": 2,
             "early_stopping": True,
-            "generate_max_length": 256,
-            "num_beams": 4,
+            "generate_max_length": 512, #256
+            #"min_length": 50,
+            "num_beams": 5, #4
             "batch_size": 4,
             "remove_tokens": ['<usr>', '</s>', '<s>', '<pad>'],
             "ckt_path": "./results/final_t5_model.pt"
