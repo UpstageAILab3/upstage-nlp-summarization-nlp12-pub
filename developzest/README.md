@@ -27,9 +27,6 @@
 - QLoRA(Quantized Low-Rank Adaptation)는 LoRA에 양자화(Quantization) 기법을 추가해 LoRA보다 더 적은 메모리와 자원을 사용하면서도 비슷한 성능을 낼 수 있는 방법으로 4비트 양자화 설정
 - SFTTrainer(Supervised Fine-Tuning Trainer)를 사용하여 사전 학습된 언어 모델을 해당 task에 맞게 지도 학습(Supervised Fine-Tuning)으로 대규모 언어 모델의 미세 조정 과정을 쉽게 관리하고 실행할 수 있도록 함
 
-LoRA란?
-LoRA는 대규모 언어 모델을 미세 조정할 때 모델 전체의 가중치를 변경하는 대신, 작은 크기의 어댑터 행렬을 추가 하여 학습하는 방법이다. 이를 통해 학습해야 할 파라미터수를 줄여 학습 속도를 높이고 메모리 사용량을 줄일 수 있다. 이렇게 하면 메모리 요구량과 계산 비용을 크게 절감할 수 있다.
-
 # 아쉬웠던 점
 - baseline에서 사용한 모델 외 타 kobart 모델도 사용해보고 num_beams 를 조정해보거나 length_penalty 및 repetition_penalty 값을 추가해도 kobart 모델로는 최고의 성능을 낼 수 없어서 좀 아쉬웠음
 - Llama3 모델 사용 시 'CUDA OutOfMemory'가 자주 발생해서 좀 답답한 느낌 들었음
