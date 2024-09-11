@@ -1,93 +1,63 @@
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/zHsKfIy0)
-# Title (Please modify the title)
+# Dialogue Summarization | 일상 대화 요약
 ## Team
 
-| ![박패캠](https://avatars.githubusercontent.com/u/156163982?v=4) | ![이패캠](https://avatars.githubusercontent.com/u/156163982?v=4) | ![최패캠](https://avatars.githubusercontent.com/u/156163982?v=4) | ![김패캠](https://avatars.githubusercontent.com/u/156163982?v=4) | ![오패캠](https://avatars.githubusercontent.com/u/156163982?v=4) |
+
+| ![박범철](https://avatars.githubusercontent.com/u/117797850?v=4) |![김나리](https://avatars.githubusercontent.com/u/137861675?v=4) |   ![조용중](https://avatars.githubusercontent.com/u/5877567?v=4) | ![최윤설](https://avatars.githubusercontent.com/u/72685362?v=4) ||
 | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: |
-|            [박패캠](https://github.com/UpstageAILab)             |            [이패캠](https://github.com/UpstageAILab)             |            [최패캠](https://github.com/UpstageAILab)             |            [김패캠](https://github.com/UpstageAILab)             |            [오패캠](https://github.com/UpstageAILab)             |
-|                            팀장, 담당 역할                             |                            담당 역할                             |                            담당 역할                             |                            담당 역할                             |                            담당 역할                             |
-
-## 0. Overview
-### Environment
-- _Write Development environment_
-
-### Requirements
-- _Write Requirements_
-
+|                       [박범철](https://github.com/Bomtori)             | [김나리](https://github.com/narykkim)             |                      [조용중](https://github.com/paanmego)             |            [최윤설](https://github.com/developzest)             |
+|                            팀장, 발표, EDA, Pre-processing, Modeling(T5-large model)                             |                            EDA, Pre-processing, Modeling(Kobart, T5-large model)                             |                 EDA, Pre-processing, Modeling(T5-large model)                   |                            EDA, Pre-processing, Modeling(Kobart, Llama3 model)                             | 
 ## 1. Competiton Info
 
 ### Overview
 
-- _Write competition information_
+- Dialogue Summarization 경진대회는 일상 대화를 효과적으로 요약할 수 있는 모델을 구축하는 대회이다. 대화 중 요약의 필요성과 이를 통해 주관적 오류를 최소화하는 것이 목표이다. 우리는 이번 대회를 통해 대화 요약 모델 개발을 완성할 것이다.
+  
+### 평가 기준
+- ROUGE-1-F1, ROUGE-2-F1, ROUGE-L-F1  세 가지 metric을 사용해 최종 점수 산출
+- Multi-Reference Dataset의 특성에 맞춘 평가 방법: 여러 정답 요약 문장 중 3개를 비교하여 평균 점수를 계산함
+- 랜덤하게 선택된 요약 문장의 평균 점수가 약 70점임
+
 
 ### Timeline
 
-- ex) January 10, 2024 - Start Date
-- ex) February 10, 2024 - Final submission deadline
+- 2024.08.29 ~ 2024.09.02 - 대회 시작, 데이터 EDA와 Baseline 분석
+- 2024.09.03 ~ 2024.09.06 - 모델 설정, 학습 및 파인튜닝
+- 2024.09.09 ~ 2024.09.11 - inference 튜닝
 
-## 2. Components
-
-### Directory
-
-- _Insert your directory structure_
-
-e.g.
-```
-├── code
-│   ├── jupyter_notebooks
-│   │   └── model_train.ipynb
-│   └── train.py
-├── docs
-│   ├── pdf
-│   │   └── (Template) [패스트캠퍼스] Upstage AI Lab 1기_그룹 스터디 .pptx
-│   └── paper
-└── input
-    └── data
-        ├── eval
-        └── train
-```
-
-## 3. Data descrption
+## 2. Data descrption
 
 ### Dataset overview
+- 모든 데이터는 .csv 형식으로 제공되고 있으며, 각각의 데이터 건수는 다음과 같습니다.
 
-- _Explain using data_
+- train : 12457
 
-### EDA
+- dev : 499
 
-- _Describe your EDA process and step-by-step conclusion_
+- test : 250
+
+- hidden-test : 249
 
 ### Data Processing
 
-- _Describe data processing process (e.g. Data Labeling, Data Cleaning..)_
+- 오탈자 수정 (철자 오류 등 수정)
+- 마스킹 처리 (Special token 적용)
+- 자/모음으로만 구성된 문자열 제거 (정규식 활용) 
 
-## 4. Modeling
+## 3. Modeling
 
-### Model descrition
+- Kobart ([digit82/kobart_summarization](https://huggingface.co/digit82/kobart-summarization))
+- T5-Large ([lcw99/t5-large-korean-text-summary](https://huggingface.co/lcw99/t5-large-korean-text-summary))
+- Llama3 ([beomi/Llama-3-Open-Ko-8B](https://huggingface.co/beomi/Llama-3-Open-Ko-8B)) 
+  
 
-- _Write model information and why your select this model_
-
-### Modeling Process
-
-- _Write model train and test process with capture_
-
-## 5. Result
+## 4. Result
 
 ### Leader Board
 
-- _Insert Leader Board Capture_
-- _Write rank and score_
+- Public, Private 5위 
 
 ### Presentation
 
-- _Insert your presentaion file(pdf) link_
+- 
 
-## etc
-
-### Meeting Log
-
-- _Insert your meeting log link like Notion or Google Docs_
-
-### Reference
-
-- _Insert related reference_
