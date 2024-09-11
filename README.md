@@ -59,5 +59,6 @@
 
 ### Presentation
 
-- 
+- [일상대화요약 발표자료 PDF 다운로드](https://github.com/UpstageAILab3/upstage-nlp-summarization-nlp12/blob/main/%EC%9D%BC%EC%83%81%EB%8C%80%ED%99%94%EC%9A%94%EC%95%BD%20%EB%B0%9C%ED%91%9C%EC%9E%90%EB%A3%8C%20Team12.pdf)
+
 
